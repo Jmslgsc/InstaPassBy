@@ -1,4 +1,4 @@
-name: ShellCheck
+name: ShellCheck Lint
 
 on:
   push:
@@ -6,15 +6,11 @@ on:
 
 jobs:
   shellcheck:
-    name: ShellCheck
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run ShellCheck action
-        uses: koalaman/shellcheck-action@master
-        with:
-          files: |
-            Main.sh
-            Results.sh
+      - name: Run ShellCheck
+        uses: ludeeus/action-shellcheck@2.0.0
+
