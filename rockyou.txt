@@ -1,0 +1,10 @@
+alpha
+bravo
+charlie
+delta
+echo
+bravo
+echo
+alpha
+delta
+charlie
