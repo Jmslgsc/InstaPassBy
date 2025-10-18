@@ -897,3 +897,18 @@ print_results() {
 
 # Call print_results when the script exits normally
 trap print_results EXIT
+# ---------------- SAFE TEST start() placeholder ----------------
+start() {
+  echo "[SAFE-START] placeholder start() — no network activity"
+  # local wordlist inside repo (ignored by git)
+  wl_pass="${wl_pass:-rockyou.txt}"
+  startline=${startline:-1}
+  endline=${endline:-5}
+  token=${token:-0}
+  turn=${turn:-100}
+  counter=${counter:-0}
+  counter1=${counter1:-0}; counter2=${counter2:-0}; counter3=${counter3:-0}
+  counter4=${counter4:-0}; counter5=${counter5:-0}
+  SAFE_TEST_MODE=1
+}
+# ---------------- end SAFE TEST start() placeholder ----------------
