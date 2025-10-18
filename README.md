@@ -48,3 +48,22 @@ Tool is created to help in penetration testing and it's not responsible for any 
 
 inspired by https://github.com/Jmslgsc Big thanks to @Jmslgsc
 
+
+---
+
+## Legal & Safety Notice
+
+⚠️ **Important — Demo / Educational Release**
+
+This repository contains a **demo-safe** branch intended for learning and demonstrations.  
+The public `demo-safe` branch **does not** perform real network attacks. A separate `full-test` branch (kept private) contains full behavior for authorized testing only.
+
+**DO NOT** run the real behavior unless you:
+1. Own the target or have explicit written permission to test it;  
+2. Run the script in an isolated, controlled environment (e.g., disposable VM); and  
+3. Intentionally enable real execution by running:
+   ```bash
+   export ENABLE_REAL_RUN=1
+   sudo ./Main.sh --run-real
+
+yes
