@@ -1,0 +1,25 @@
+function start() {
+read -p $'\e[1;92mUsername account: \e[0m' user
+if [[ -z "$user" ]]; then
+  printf "\e[1;91mUsername cannot be empty! Try again\e[0m\n"
+  sleep 1
+start
+  return
+fi
+# check common messages for non-existing profile (case-insensitive, more robust)
+checkaccount=$(curl -L -s "https://www.instagram.com/${user}/" | grep -i -E -c "the page may have been removed|sorry, this page isn't available|page not found")
+if [[ "$checkaccount" -gt 0 ]]; then
+  printf "\e[1;91mInvalid Username! Try again\e[0m\n"
+  sleep 1
+  start
+else
+  # default to a single sensible wordlist filename (script expects a single file path)
+  default_wl_pass="rockyou.txt"
+  read -p $'\e[1;92mPassword List (Enter to default list): \e[0m' wl_pass
+  wl_pass="${wl_pass:-${default_wl_pass}}"
+  # prompt for threads (use default if empty)
+  default_threads="100"
+  read -p $'\e[1;92mThreads (Enter to default 100): \e[0m' threads_input
+  threads="${threads_input:-${default_threads}}"
+fi
+}
